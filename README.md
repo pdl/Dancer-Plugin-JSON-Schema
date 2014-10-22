@@ -1,233 +1,138 @@
 # NAME
 
-Dancer::Plugin::DBIC - DBIx::Class interface for Dancer applications
+Dancer::Plugin::Apache::Solr - Apache::Solr interface for Dancer applications
 
 # VERSION
 
-version 0.2100
+version 0.001
 
 # SYNOPSIS
 
     use Dancer;
-    use Dancer::Plugin::DBIC qw(schema resultset rset);
+    use Dancer::Plugin::Apache::Solr qw(solr);
 
-    get '/users/:user_id' => sub {
-        my $user = schema('default')->resultset('User')->find(param 'user_id');
+    get '/search' => sub {
+      my $results = solr('default')->select(q => param 'q');
 
-        # If you are accessing the 'default' schema, then all the following
-        # are equivalent to the above:
-        $user = schema->resultset('User')->find(param 'user_id');
-        $user = resultset('User')->find(param 'user_id');
-        $user = rset('User')->find(param 'user_id');
+      # If you are accessing the 'default' schema, then you can just do:
+      my $results = solr->select(q => param 'q');
 
-        template user_profile => {
-            user => $user
-        };
+      template search_results => {
+        results => do_something_clever_with ($results)
+      };
     };
 
     dance;
 
 # DESCRIPTION
 
-This plugin makes it very easy to create [Dancer](http://search.cpan.org/perldoc?Dancer) applications that interface
-with databases.
-It automatically exports the keyword `schema` which returns a
-[DBIx::Class::Schema](http://search.cpan.org/perldoc?DBIx::Class::Schema) object.
-You just need to configure your database connection information.
-For performance, schema objects are cached in memory
-and are lazy loaded the first time they are accessed.
+This plugin makes it very easy to create [Dancer](https://metacpan.org/pod/Dancer) applications that interface
+with the Apache Solr search engine.
+
+It automatically exports the keyword `solr` which returns an [Apache::Solr](https://metacpan.org/pod/Apache::Solr) object.
+
+You just need to configure your connection information.
+
+For performance, Apache::Solr objects are cached in memory and are lazy loaded the first time they are accessed.
 
 # CONFIGURATION
 
-Configuration can be done in your [Dancer](http://search.cpan.org/perldoc?Dancer) config file.
+Configuration can be done in your [Dancer](https://metacpan.org/pod/Dancer) config file.
 
-## simple example
+## Simple example
 
 Here is a simple example. It defines one database named `default`:
 
     plugins:
-      DBIC:
+      Apache-Solr:
         default:
-          dsn: dbi:SQLite:dbname=myapp.db
-          schema_class: MyApp::Schema
+          server: http://solr.example.com/search/
 
-## multiple schemas
+## Multiple servers
 
-In this example, there are 2 databases configured named `default` and `foo`:
+In this example, there are 2 servers configured named `default` and `accessories`:
 
     plugins:
-      DBIC:
+      Apache-Solr:
         default:
-          dsn: dbi:SQLite:dbname=myapp.db
-          schema_class: MyApp::Schema
-        foo:
-          dsn: dbi:Pg:dbname=foo
-          schema_class: Foo::Schema
-          user: bob
-          password: secret
-          options:
-            RaiseError: 1
-            PrintError: 1
+          server: http://solr.example.com/productSearch/
+        accessories:
+          server: http://solr.example.com/accessorySearch/
 
-Each database configured must at least have a dsn option.
-The dsn option should be the [DBI](http://search.cpan.org/perldoc?DBI) driver connection string.
-All other options are optional.
+Each server configured must at least have a `server` option set.
 
-If you only have one schema configured, or one of them is named
-`default`, you can call `schema` without an argument to get the only
-or `default` schema, respectively.
+If you only have one server configured, or one of them is named
+`default`, you can call `solr` without an argument to get the only
+or `default` server, respectively.
 
-If a schema\_class option is not provided, then [DBIx::Class::Schema::Loader](http://search.cpan.org/perldoc?DBIx::Class::Schema::Loader)
-will be used to dynamically load the schema by introspecting the database
-corresponding to the dsn value.
-You need [DBIx::Class::Schema::Loader](http://search.cpan.org/perldoc?DBIx::Class::Schema::Loader) installed for this to work.
+## server\_info
 
-WARNING: Dynamic loading is not recommended for production environments.
-It is almost always better to provide a schema\_class option.
-
-The schema\_class option should be the name of your [DBIx::Class::Schema](http://search.cpan.org/perldoc?DBIx::Class::Schema) class.
-See ["SCHEMA GENERATION"](#SCHEMA GENERATION)
-Optionally, a database configuration may have user, password, and options
-parameters as described in the documentation for `connect()` in [DBI](http://search.cpan.org/perldoc?DBI).
-
-## connect\_info
-
-Alternatively, you may also declare your connection information inside an
-array named `connect_info`:
+Alternatively, you may also declare your server information inside a hash named `server_info`:
 
     plugins:
-      DBIC:
+      Apache-Solr:
         default:
-          schema_class: MyApp::Schema
-          connect_info:
-            - dbi:Pg:dbname=foo
-            - bob
-            - secret
-            -
-              RaiseError: 1
-              PrintError: 1
-
-## replicated
-
-You can also add database read slaves to your configuration with the
-`replicated` config option.
-This will automatically make your read queries go to a slave and your write
-queries go to the master.
-Keep in mind that this will require additional dependencies:
-[DBIx::Class::Optional::Dependencies\#Storage::Replicated](http://search.cpan.org/perldoc?DBIx::Class::Optional::Dependencies\#Storage::Replicated)
-See [DBIx::Class::Storage::DBI::Replicated](http://search.cpan.org/perldoc?DBIx::Class::Storage::DBI::Replicated) for more details.
-Here is an example configuration that adds two read slaves:
-
-    plugins:
-      DBIC:
-        default:
-          schema_class: MyApp::Schema
-          dsn: dbi:Pg:dbname=master
-          replicated:
-            balancer_type: ::Random     # optional
-            balancer_args:              # optional
-                auto_validate_every: 5  # optional
-                master_read_weight:1    # optional
-            # pool_type and pool_args are also allowed and are also optional
-            replicants:
-              -
-                - dbi:Pg:dbname=slave1
-                - user1
-                - password1
-                -
-                  quote_names: 1
-                  pg_enable_utf8: 1
-              -
-                - dbi:Pg:dbname=slave2
-                - user2
-                - password2
-                -
-                  quote_names: 1
-                  pg_enable_utf8: 1
+          server_info:
+            server: http://solr.example.com/productSearch/
+            format => JSON
+            server_version: 4.5
 
 ## alias
 
-Schema aliases allow you to reference the same underlying database by multiple
-names.
+Aliases allow you to reference the same underlying server with multiple names.
+
 For example:
 
     plugins:
-      DBIC:
+      Apache-Solr:
         default:
-          dsn: dbi:Pg:dbname=master
-          schema_class: MyApp::Schema
-        slave1:
+            server: http://solr.example.com/productSearch/
+        products:
           alias: default
 
-Now you can access the default schema with `schema()`, `schema('default')`,
-or `schema('slave1')`.
-This can come in handy if, for example, you have master/slave replication in
-your production environment but only a single database in your development
-environment.
-You can continue to reference `schema('slave1')` in your code in both
-environments by simply creating a schema alias in your development.yml config
-file, as shown above.
+Now you can access the default schema with `solr()`, `solr('default')`,
+or `solr('products')`.
 
 # FUNCTIONS
 
-## schema
+## solr
 
-    my $user = schema->resultset('User')->find('bob');
+    my $results = solr->select( q => $searchString );
 
-The `schema` keyword returns a [DBIx::Class::Schema](http://search.cpan.org/perldoc?DBIx::Class::Schema) object ready for you to
-use.
-If you have configured only one database, then you can simply call `schema`
-with no arguments.
-If you have configured multiple databases,
-you can still call `schema` with no arguments if there is a database
-named `default` in the configuration.
-With no argument, the `default` schema is returned.
-Otherwise, you __must__ provide `schema()` with the name of the database:
+The `solr` keyword returns a [Apache::Solr](https://metacpan.org/pod/Apache::Solr) object ready for you to use.
 
-    my $user = schema('foo')->resultset('User')->find('bob');
+If you have configured only one server, then you can simply call `solr` with no arguments.
 
-## resultset
+If you have configured multiple server, you can still call `solr` with no arguments if there is a server named `default` in the configuration.
 
-This is a convenience method that will save you some typing.
-Use this __only__ when accessing the `default` schema.
+With no argument, the `default` server is returned.
 
-    my $user = resultset('User')->find('bob');
+Otherwise, you **must** provide `solr()` with the name of the server:
 
-is equivalent to:
+    my $user = solr('accessories')->select( ... );
 
-    my $user = schema->resultset('User')->find('bob');
+# AUTHORS AND CONTRIBUTORS
 
-## rset
+This module is based on [Dancer::Plugin::DBIC](https://metacpan.org/pod/Dancer::Plugin::DBIC), as at 22 October 2014.
 
-    my $user = rset('User')->find('bob');
+The following had authored [Dancer::Plugin::DBIC](https://metacpan.org/pod/Dancer::Plugin::DBIC) at this time:
 
-This is simply an alias for `resultset`.
+- - Al Newkirk <awncorp@cpan.org>
+- Naveed Massjouni <naveed@vt.edu>
 
-# SCHEMA GENERATION
-
-Setting the schema\_class option and having proper DBIx::Class classes
-is the recommended approach for performance and stability.
-You can use the [dbicdump](http://search.cpan.org/perldoc?dbicdump) command line tool provided by
-[DBIx::Class::Schema::Loader](http://search.cpan.org/perldoc?DBIx::Class::Schema::Loader) to help you.
-For example, if your app were named Foo, then you could run the following
-from the root of your project directory:
-
-    dbicdump -o dump_directory=./lib Foo::Schema dbi:SQLite:/path/to/foo.db
-
-For this example, your `schema_class` setting would be `'Foo::Schema'`.
-
-# CONTRIBUTORS
+The following had made contributions to [Dancer::Plugin::DBIC](https://metacpan.org/pod/Dancer::Plugin::DBIC) at this time:
 
 - Alexis Sukrieh <sukria@sukria.net>
-- Dagfinn Ilmari Mannsåker <[https://github.com/ilmari](https://github.com/ilmari)\>
+- Dagfinn Ilmari Mannsåker <[https://github.com/ilmari](https://github.com/ilmari)>
 - David Precious <davidp@preshweb.co.uk>
-- Fabrice Gabolde <[https://github.com/fgabolde](https://github.com/fgabolde)\>
+- Fabrice Gabolde <[https://github.com/fgabolde](https://github.com/fgabolde)>
 - Franck Cuny <franck@lumberjaph.net>
-- Steven Humphrey <[https://github.com/shumphrey](https://github.com/shumphrey)\>
-- Yanick Champoux <[https://github.com/yanick](https://github.com/yanick)\>
+- Steven Humphrey <[https://github.com/shumphrey](https://github.com/shumphrey)>
+- Yanick Champoux <[https://github.com/yanick](https://github.com/yanick)>
 
 # AUTHORS
 
+- Daniel Perrett <dp13@sanger.ac.uk>
 - Al Newkirk <awncorp@cpan.org>
 - Naveed Massjouni <naveed@vt.edu>
 
