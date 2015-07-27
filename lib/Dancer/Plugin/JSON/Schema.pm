@@ -81,7 +81,7 @@ register_plugin for_versions => [ 1, 2 ];
   use Dancer::Plugin::JSON::Schema qw(json_schema);
 
   post '/search' => sub {
-    my $structure = params('q')
+    my $structure = param('q');
     my $result = json_schema('default')->validate($structure);
 
     # If you are accessing the 'default' schema, then you can just do:
